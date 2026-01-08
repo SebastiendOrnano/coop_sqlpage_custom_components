@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (url) {
       // ✅ URL COMPLÈTE EN DUR
-      const fullUrl = 'http://localhost:8080/' + url.replace(/^\//, '');
+ const fullUrl = window.location.origin + '/' + url.replace(/^\//, '');
       
       const content = document.getElementById('{{id}}_content');
       content.innerHTML = `
