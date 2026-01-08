@@ -35,8 +35,7 @@
       window.open(url, "_blank", "noopener");
       return;
     }
-
-    const fullUrl = 'http://localhost:8080/' + url.replace(/^\//, '');
+ const fullUrl = window.location.origin + '/' + url.replace(/^\//, '');
     
     contentEl.innerHTML = `
       <iframe src="${fullUrl}"
