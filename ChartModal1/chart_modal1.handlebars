@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Timeline RangeBar - Dual Links (FIX)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: 20px; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 12px; max-width: 900px; }
+    .chart { height: 360px; }
+    .spinner-wrapper { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+    .apexcharts-series .apexcharts-bar-area { cursor: pointer; }
+    #chart-canvas .apexcharts-yaxis .clickable-label { cursor: pointer; text-decoration: underline; }
+    #chart-canvas .apexcharts-yaxis .clickable-label:focus { outline: 2px solid #2684FF; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <div id="rangebar-1" class="card" data-pre-init="chart">
+    <h3 class="card-title">{{title}}</h3>
+    <div class="chart">
+      <div id="chart-canvas"></div>
+      <div class="spinner-wrapper" id="spinner">Loading...</div>
+
+      <!-- ✅ JSON SIMPLIFIÉ - Compatible avec tes données -->
+      <data hidden>
+{
+  "type": {{stringify type}},
+  "time": {{stringify time}},
+  "horizontal": {{stringify horizontal}},
+  "colors": {{stringify (to_array color)}},
+  "xmin": {{stringify xmin}},
+  "xmax": {{stringify xmax}},
+  "points": [
+    {{~#each_row~}}
+      {{~#if (gt @row_index 0)}},{{/if~}}
+      [
+        {{~ stringify series ~}},
+        {{~ stringify label ~}},
+        {{~ stringify value ~}},
+        {{~#if link1~}}{{~ stringify link1 ~}},{{~/if~}}
+        {{~#if link2~}}{{~ stringify link2 ~}}{{~/if~}}
+      ]
+    {{~/each_row~}}
+  ]
+}
+      </data>
+    </div>
+  </div>
+
+<script>
+(function(){
+  console.log('Chart init started');
+  
+  const container = document.querySelector('[data-pre-init="chart"]');
+  if (!container) {
+    console.error('Container not found');
+    return;
+  }
+
+  const dataEl = container.querySelector("data");
+  if (!dataEl) {
+    console.error('Data element not found');
+    return;
+  }
+
+  let raw = dataEl.textContent || "";
+  if (raw.includes("&")) {
+    const txt = document.createElement("textarea");
+    txt.innerHTML = raw;
+    raw = txt.value;
+  }
+
+  console.log('Raw JSON:', raw.substring(0, 200) + '...');
+
+  let chartData;
+  try {
+    chartData = JSON.parse(raw);
+    console.log('Parsed chartData:', chartData);
+  } catch (e) {
+    console.error("JSON Parse failed:", e, raw);
+    document.getElementById('spinner').innerHTML = 'JSON Error: ' + e.message;
+    return;
+  }
+
+  if (!Array.isArray(chartData.points) || chartData.points.length === 0) {
+    console.error('No points data');
+    document.getElementById('spinner').innerHTML = 'No data';
+    return;
+  }
+
+  // Parsing simple comme chart_modal original
+  const seriesNames = [];
+  const seriesMap = { dataByX: {}, link1ByX: {}, link2ByX: {} };
+  const categories = [];
+
+  const toMs = (d) => {
+    if (typeof d === "number") return d;
+    if (d === null || d === undefined || d === "") return null;
+    if (/^\d+$/.test(String(d).trim())) return Number(d);
+    const s = String(d).trim();
+    const dt = new Date(s.includes("T") ? s : `${s}T00:00:00`);
+    return isNaN(dt) ? null : dt.getTime();
+  };
+
+  // Parsing des points [series, label, value, link1?, link2?]
+  chartData.points.forEach(pt => {
+    if (!Array.isArray(pt) || pt.length < 3) return;
+    
+    const seriesName = String(pt[0] || 'Default');
+    const label = String(pt[1]);
+    const yRaw = pt[2];
+    
+    // link1 = pt[3], link2 = pt[4]
+    const link1 = pt[3] && /^\//.test(String(pt[3])) ? String(pt[3]) : null;
+    const link2 = pt[4] && /^\//.test(String(pt[4])) ? String(pt[4]) : null;
+
+    let y = Array.isArray(yRaw) ? 
+      yRaw.map(toMs).every(v => v !== null) ? yRaw.map(toMs) : null :
+      toMs(yRaw);
+
+    if (y === null) return;
+
+    if (!seriesNames.includes(seriesName)) seriesNames.push(seriesName);
+    
+    const mapKey = label;
+    seriesMap.dataByX[mapKey] = y;
+    if (link1) seriesMap.link1ByX[mapKey] = link1;
+    if (link2) seriesMap.link2ByX[mapKey] = link2;
+    
+    if (!categories.includes(label)) categories.push(label);
+  });
+
+  console.log('Parsed data:', { seriesNames, categories: categories.length, links: Object.keys(seriesMap.link1ByX).length });
+
+  // Une seule série avec toutes les catégories
+  const series = [{
+    name: chartData.title || 'Timeline',
+    data: categories.map(cat => {
+      const y = seriesMap.dataByX[cat];
+      return {
+        x: cat,
+        y: y,
+        link1: seriesMap.link1ByX[cat],
+        link2: seriesMap.link2ByX[cat]
+      };
+    })
+  }];
+
+  // Fonctions d'ouverture
+  function openModalLink(url) {
+    if (typeof window.openInSqlpageModal === "function") {
+      window.openInSqlpageModal(url);
+    } else {
+      window.open(url, "_blank");
+    }
+  }
+
+ function openNewTab(url) {
+  window.location.href = url;  // ← REMPLACE le parent
+}
+
+  const formatDateValue = (val) => {
+    const fmt = (ms) => new Date(ms).toLocaleDateString('fr-FR');
+    return Array.isArray(val) ? val.map(fmt).join(' — ') : fmt(val);
+  };
+
+  // Labels Y cliquables (link2)
+  function attachYLabelLinks() {
+    const chartContainer = document.getElementById("chart-canvas");
+    if (!chartContainer) return;
+
+    setTimeout(() => {
+      const labels = chartContainer.querySelectorAll('.apexcharts-yaxis text');
+      labels.forEach((label, idx) => {
+        const cat = categories[idx];
+        const link2 = series[0].data[idx]?.link2;
+        if (!link2) return;
+
+        label.classList.add('clickable-label');
+        label.style.cursor = 'pointer';
+        label.style.fill = '#0366d6';
+        label.onclick = (e) => {
+          e.stopPropagation();
+          openNewTab(link2);
+        };
+      });
+    }, 100);
+  }
+
+  const options = {
+    chart: {
+      type: 'rangeBar',
+      height: 360,
+      toolbar: { show: false },
+      events: {
+        dataPointSelection: (event, chart, config) => {
+          // Clic barre → link1 (modal)
+          const point = series[0].data[config.dataPointIndex];
+          if (point?.link1) {
+            event.preventDefault();
+            openModalLink(point.link1);
+          }
+        },
+        mounted: attachYLabelLinks,
+        updated: attachYLabelLinks
+      }
+    },
+    plotOptions: {
+      bar: { horizontal: true, dataLabels: { position: "top" } }
+    },
+    series: series,
+    xaxis: { 
+      type: "datetime", 
+      labels: { format: "dd/MM/yy" } 
+    },
+    yaxis: { 
+      labels: { 
+        formatter: (val) => String(val)
+      } 
+    },
+    tooltip: { 
+      x: { formatter: formatDateValue } 
+    },
+    colors: chartData.colors || ['#00E396', '#008FFB']
+  };
+
+  const chartContainer = document.getElementById("chart-canvas");
+  const spinner = document.getElementById("spinner");
+  
+  const chart = new ApexCharts(chartContainer, options);
+  chart.render()
+    .then(() => {
+      spinner.remove();
+      console.log('Chart rendered successfully');
+    })
+    .catch(err => {
+      console.error('Chart render error:', err);
+      spinner.innerHTML = 'Chart Error: ' + err.message;
+    });
+
+})();
+
+// === NOUVEAU : ÉCOUTEUR postMessage pour rafraîchir le parent ===
+window.addEventListener('message', function(event) {
+  // Vérifier que le message vient de l'iframe enfant
+  if (event.source !== window.parent) return;
+  
+  if (event.data.action === 'refresh' || event.data.action === 'close') {
+    console.log('Message reçu de l’enfant:', event.data);
+    // Rafraîchir la page parent
+    location.reload();
+  }
+});
+
+// === NOUVEAU : ÉMETTRE postMessage lors de la fermeture du modal ===
+document.addEventListener('click', function(e) {
+  if (e.target.matches('[data-bs-dismiss="modal"], .btn-close, .btn[data-bs-dismiss="modal"]')) {
+    // Envoyer message au parent AVANT fermeture
+    window.parent.postMessage({ 
+      action: 'refresh', 
+      source: 'modal_chart',
+      timestamp: Date.now()
+    }, '*');
+    
+    console.log('Message envoyé au parent pour refresh');
+  }
+});
+
+// === ÉVÉNEMENT SQLPAGE (gardé pour compatibilité) ===
+window.addEventListener("sqlpage:modal:close", function (event) {
+  console.log("Modal SQLPage fermé via event", event);
+  location.reload();
+});
+
+
+</script>
+</body>
+</html>
