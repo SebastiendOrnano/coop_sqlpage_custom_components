@@ -1,5 +1,5 @@
 
- ¡¡¡ **More detailed explanations are given in the[ wiki](https://github.com/SebastiendOrnano/coop_sqlpage_custom_components/wiki/COOP-SQLPage-custom-components-wiki/_edit)**  ¡¡¡
+ ¡¡¡ **More detailed explanations are given in the[ wiki](https://github.com/SebastiendOrnano/coop_sqlpage_custom_components/wiki))**  ¡¡¡
 
 # Intro
 
